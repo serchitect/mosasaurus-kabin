@@ -1,0 +1,256 @@
+import React, { useState } from 'react';
+import { Camera, RefreshCw, Sparkles, AlertCircle, Info, ShieldCheck, FileText, Check } from 'lucide-react';
+
+const App = () => {
+  const [status, setStatus] = useState('idle'); // idle, generating, error, success
+  const [userImage, setUserImage] = useState(null);
+  const [resultImage, setResultImage] = useState(null);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [hasAcceptedKVKK, setHasAcceptedKVKK] = useState(false);
+  const [showKVKKModal, setShowKVKKModal] = useState(true);
+
+  const apiKey = ""; // Sistem tarafından otomatik sağlanır
+
+  const fetchWithRetry = async (url, options, retries = 5, backoff = 1000) => {
+    try {
+      const response = await fetch(url, options);
+      if (!response.ok) throw new Error(`Sunucu hatası: ${response.status}`);
+      return await response.json();
+    } catch (err) {
+      if (retries > 0) {
+        await new Promise(resolve => setTimeout(resolve, backoff));
+        return fetchWithRetry(url, options, retries - 1, backoff * 2);
+      }
+      throw err;
+    }
+  };
+
+  const handleImageUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setUserImage(event.target.result);
+        generateAIImage(event.target.result.split(',')[1]);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const generateAIImage = async (base64Data) => {
+    setStatus('generating');
+    setErrorMessage('');
+
+    // GÜNCELLENMİŞ PROMPT: Su altı hissiyatı detaylandırıldı
+    const systemPrompt = `Kastamonu Müzesi için özel bir fotoğraf editörüsün. 
+    Kullanıcının fotoğrafını, 65 milyon yıl önce yaşayan, canlı ve devasa bir Mosasaurus ile yan yana, gerçekçi bir su altı sahnesine dönüştür.
+    
+    ANA KURALLAR:
+    1. Dev, pullu derisi olan, yaşayan bir Mosasaurus ana figür olmalı.
+    2. Kişiyi, Mosasaurus'un dev dişlerinden birini tutuyormuş gibi sahneye yerleştir.
+    3. Kişinin elinde "Devrekani Hatırası" yazan eski, ahşap bir tabela olsun.
+    
+    SU ALTI DETAYLARI (ÇOK ÖNEMLİ):
+    4. Kişinin kıyafetleri ve saçları suyun içinde ıslanmış, ağırlaşmış ve vücuduna yapışmış gibi görünmeli.
+    5. Kumaşlarda ve saçlarda hafif dalgalanmalar, küçük hava kabarcıkları ve suyun akıntısıyla oluşan hareket hissi olmalı.
+    6. Ortamdaki mavi-yeşil su altı ışığı ve güneş ışınları (god rays) kişinin üzerine ve yüzüne doğal bir şekilde düşmeli.
+    7. Genel renk paleti serin, mavi ve derinlik hissi veren tonlarda olmalı. Kişi kuru bir fotoğraf gibi durmamalı, tamamen sahnenin bir parçası gibi görünmeli.`;
+
+    const payload = {
+      contents: [
+        {
+          role: "user",
+          parts: [
+            { text: "Beni Kastamonu Devrekani'de yaşayan dev Mosasaurus'un yanına yerleştir. Onun dişini tutuyorum ve elimde 'Devrekani Hatırası' tabelası var. Kıyafetlerimin ve saçlarımın suyun içinde ıslak ve dalgalı göründüğü, çok gerçekçi bir su altı karesi olsun." },
+            { inlineData: { mimeType: "image/png", data: base64Data } }
+          ]
+        }
+      ],
+      generationConfig: {
+        responseModalities: ["TEXT", "IMAGE"]
+      }
+    };
+
+    try {
+      const result = await fetchWithRetry(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image-preview:generateContent?key=${apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        }
+      );
+
+      const generatedBase64 = result.candidates?.[0]?.content?.parts?.find(p => p.inlineData)?.inlineData?.data;
+
+      if (generatedBase64) {
+        setResultImage(`data:image/png;base64,${generatedBase64}`);
+        setStatus('success');
+      } else {
+        throw new Error("Görsel oluşturma başarısız oldu.");
+      }
+    } catch (err) {
+      setErrorMessage("Bağlantı sorunu yaşandı. Lütfen tekrar deneyiniz.");
+      setStatus('error');
+    }
+  };
+
+  const reset = () => {
+    setUserImage(null);
+    setResultImage(null);
+    setStatus('idle');
+  };
+
+  const handleKVKKAccept = () => {
+    setHasAcceptedKVKK(true);
+    setShowKVKKModal(false);
+  };
+
+  return (
+    <div className="min-h-screen bg-[#020617] text-white flex flex-col items-center p-4 font-sans select-none overflow-x-hidden">
+      
+      {showKVKKModal && (
+        <div className="fixed inset-0 z-[100] bg-slate-950 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-white/10 w-full max-w-md rounded-[2.5rem] flex flex-col max-h-[90vh] shadow-2xl overflow-hidden">
+            <div className="p-8 text-center border-b border-white/5 bg-slate-800/30">
+              <div className="w-16 h-16 bg-blue-600/20 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-blue-500/30">
+                <ShieldCheck className="text-blue-400" size={32} />
+              </div>
+              <h2 className="text-xl font-bold">KVKK ve Açık Rıza</h2>
+              <p className="text-slate-400 text-xs mt-1 italic">Kastamonu Müzesi Mosasaurus Deneyimi</p>
+            </div>
+
+            <div className="flex-grow p-6 overflow-y-auto space-y-6 text-sm leading-relaxed text-slate-300">
+              <section>
+                <h3 className="flex items-center gap-2 font-bold text-blue-400 mb-2 uppercase tracking-wider text-xs">
+                  <FileText size={14} /> Aydınlatma Metni
+                </h3>
+                <p>Bu uygulama kapsamında yüklediğiniz yüz fotoğrafınız, sadece "Gemini Yapay Zeka" modeli kullanılarak hatıra görseli oluşturulması amacıyla geçici olarak işlenmektedir. Fotoğrafınız sunucularımızda saklanmamakta ve üçüncü şahıslarla paylaşılmamaktadır.</p>
+              </section>
+
+              <section>
+                <h3 className="flex items-center gap-2 font-bold text-blue-400 mb-2 uppercase tracking-wider text-xs">
+                  <Check size={14} /> Açık Rıza Metni
+                </h3>
+                <p>Yüklediğim fotoğrafın yapay zeka aracılığıyla işlenerek Mosasaurus temalı bir görsel üretilmesini, kişisel verilerimin bu amaçla anonim bir şekilde kullanılmasını kabul ediyorum. İşlem tamamlandığında verilerimin kalıcı olarak silineceğini anladım.</p>
+              </section>
+            </div>
+
+            <div className="p-6 bg-slate-900 border-t border-white/5">
+              <button 
+                onClick={handleKVKKAccept}
+                className="w-full bg-blue-600 hover:bg-blue-500 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20 active:scale-95 transition-all"
+              >
+                Okudum, Onaylıyorum
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="fixed inset-0 pointer-events-none">
+        <div className="absolute top-0 left-1/4 w-64 h-64 bg-blue-600/20 rounded-full blur-[100px]"></div>
+        <div className="absolute bottom-0 right-1/4 w-64 h-64 bg-teal-500/20 rounded-full blur-[100px]"></div>
+      </div>
+
+      <header className="relative z-10 text-center py-6">
+        <div className="inline-block bg-blue-500/10 border border-blue-500/20 px-4 py-1 rounded-full text-blue-400 text-[10px] font-bold tracking-widest uppercase mb-2">
+          Kastamonu Müzesi Deneyimi
+        </div>
+        <h1 className="text-4xl font-black italic tracking-tighter bg-gradient-to-b from-white to-slate-400 bg-clip-text text-transparent leading-none">
+          MOSASAURUS<br /><span className="text-blue-500 not-italic uppercase text-2xl tracking-normal">Hatıra Kabini</span>
+        </h1>
+      </header>
+
+      <main className="relative z-10 w-full max-w-md flex-grow flex flex-col justify-center">
+        {status === 'idle' && (
+          <div className="bg-slate-900/40 backdrop-blur-2xl border border-white/5 p-8 rounded-[2.5rem] shadow-2xl text-center">
+            <div className="w-20 h-20 bg-blue-600 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-xl rotate-6 group hover:rotate-0 transition-transform">
+              <Camera size={40} />
+            </div>
+            <h2 className="text-xl font-bold mb-2">65 Milyon Yıl Geriye Dönün</h2>
+            <p className="text-slate-400 text-sm mb-8 leading-relaxed">
+              Devrekani'de keşfedilen dev deniz canlısı ile fotoğraf çekinmek için bir selfie yükleyin.
+            </p>
+            
+            <label className="block w-full cursor-pointer">
+              <div className="bg-white text-slate-950 py-4 rounded-2xl font-bold text-lg flex items-center justify-center gap-2 hover:bg-blue-50 transition-colors shadow-lg active:scale-95">
+                <Sparkles size={20} className="text-blue-600" /> Fotoğraf Yükle
+              </div>
+              <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
+            </label>
+
+            <div className="mt-6 p-4 bg-blue-500/5 rounded-xl border border-blue-500/10 text-left flex gap-3">
+               <Info size={32} className="text-blue-400 shrink-0" />
+               <p className="text-[11px] text-slate-400 leading-tight">
+                 <strong>İpucu:</strong> Fotoğraf çekilirken elinizi yukarı kaldırıp bir şeyi tutuyormuş gibi yaparsanız Mosasaurus'un dişini tutuyor gibi görünürsünüz!
+               </p>
+            </div>
+          </div>
+        )}
+
+        {status === 'generating' && (
+          <div className="bg-slate-900/40 backdrop-blur-2xl border border-white/5 p-12 rounded-[2.5rem] text-center shadow-2xl">
+            <div className="relative w-24 h-24 mx-auto mb-8">
+              <div className="absolute inset-0 border-4 border-blue-500/20 rounded-full"></div>
+              <div className="absolute inset-0 border-4 border-t-blue-500 rounded-full animate-spin"></div>
+              <Sparkles className="absolute inset-0 m-auto text-blue-400 animate-pulse" size={32} />
+            </div>
+            <h2 className="text-lg font-bold">Mosasaurus Çağırılıyor...</h2>
+            <p className="text-slate-400 text-xs mt-2 animate-pulse">Lütfen bekleyin, yapay zeka sahneyi hazırlıyor.</p>
+          </div>
+        )}
+
+        {status === 'success' && (
+          <div className="flex flex-col gap-4 animate-in fade-in zoom-in duration-500">
+            <div className="relative group">
+              <div className="bg-white p-2 rounded-[2.5rem] shadow-[0_20px_50px_rgba(0,0,0,0.5)] overflow-hidden">
+                <img 
+                  src={resultImage} 
+                  alt="Mosasaurus AI Result" 
+                  className="w-full rounded-[2rem] display-block"
+                />
+              </div>
+              <div className="absolute bottom-6 left-4 right-4 text-center">
+                <p className="text-[10px] sm:text-[11px] text-white bg-black/70 backdrop-blur-md inline-block px-4 py-2 rounded-full font-medium border border-white/10 shadow-lg">
+                  Kaydetmek için görsele basılı tutun ve "Fotoğraflara Kaydet" seçeneğini seçin.
+                </p>
+              </div>
+            </div>
+            
+            <button 
+              onClick={reset}
+              className="w-full bg-slate-800/80 hover:bg-slate-700 py-4 rounded-2xl font-bold flex items-center justify-center gap-2 transition-all border border-white/5"
+            >
+              <RefreshCw size={18} /> Yeni Fotoğraf Çek
+            </button>
+          </div>
+        )}
+
+        {status === 'error' && (
+          <div className="bg-red-950/20 backdrop-blur-2xl border border-red-500/20 p-10 rounded-[2.5rem] text-center">
+            <AlertCircle size={48} className="text-red-500 mx-auto mb-4" />
+            <h2 className="font-bold text-red-400 text-lg">Hata Oluştu</h2>
+            <p className="text-slate-400 text-sm mt-2 mb-6">{errorMessage}</p>
+            <button onClick={reset} className="w-full bg-white text-slate-900 py-4 rounded-2xl font-bold shadow-lg">Tekrar Dene</button>
+          </div>
+        )}
+      </main>
+
+      <footer className="mt-auto pt-8 pb-4 text-center z-10 w-full max-w-xs">
+        <p className="text-[9px] text-slate-500 mb-2 leading-relaxed">
+          Oluşturulan görseller gemini yapay zeka uygulaması kullanılarak oluşturulmaktadır ve kaydedilmez.
+        </p>
+        <div className="w-12 h-px bg-slate-800 mx-auto mb-3"></div>
+        <p className="text-[10px] text-slate-600 font-bold tracking-[0.3em] uppercase mb-1">
+          Kastamonu • Devrekani
+        </p>
+        <p className="text-[10px] text-slate-500/70 font-medium italic">
+          Bu uygulama İzzet Serhat Köylü tarafından yazılmıştır.
+        </p>
+      </footer>
+    </div>
+  );
+};
+
+export default App;
